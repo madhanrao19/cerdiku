@@ -1,0 +1,26 @@
+{
+  "name": "@kpm/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kpm/ai": "workspace:*",
+    "@kpm/config": "workspace:*",
+    "@kpm/observability": "workspace:*",
+    "@prisma/client": "^5.18.0",
+    "bullmq": "^5.12.0",
+    "ioredis": "5.10.1",
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.14",
+    "tsx": "^4.16.5",
+    "typescript": "^5.5.4"
+  }
+}

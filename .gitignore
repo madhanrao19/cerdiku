@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.next/
+out/
+coverage/
+.turbo/
+*.log
+.env
+.env.local
+.env.*.local
+.DS_Store
+prisma/*.db
+.pnpm-store/
+
+# Local-only Claude Code settings (personal permissions, not shared)
+.claude/settings.local.json

@@ -1,0 +1,35 @@
+{
+  "name": "kpm-learning-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Malaysia KPM-aligned homeschooling / digital learning platform",
+  "packageManager": "pnpm@9.7.0",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @kpm/api prisma generate",
+    "db:migrate": "pnpm --filter @kpm/api prisma migrate dev",
+    "db:seed": "pnpm --filter @kpm/api prisma db seed",
+    "dev:infra": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "dev:infra:down": "docker compose -f infra/docker/docker-compose.yml down"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "eslint": "^9.9.0",
+    "prettier": "^3.3.3",
+    "turbo": "^2.0.9",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "ioredis": "5.10.1"
+    }
+  }
+}

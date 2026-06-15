@@ -1,0 +1,576 @@
+// Malaysia KPM-aligned learning platform — system of record.
+//
+// Design truths encoded here:
+//  1. A child belongs to a household and may also hold an independent login.
+//  2. Curriculum is versioned by level, school_type, language, and DLP state.
+//  3. Progress is stored against standards + evidence, not only lessons done.
+//  4. AI conversations are educational records: auditable, moderated, retained.
+//  5. Billing belongs to the household / organization, never a child identity.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector, pgcrypto]
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  PARENT
+  STUDENT
+  ADMIN
+  CONTENT_ADMIN
+  SAFETY_REVIEWER
+}
+
+enum TenantType {
+  HOUSEHOLD
+  INSTITUTION
+}
+
+enum Level {
+  PRESCHOOL
+  PRIMARY
+  LOWER_SECONDARY
+  UPPER_SECONDARY
+}
+
+enum SchoolType {
+  SK
+  SJKC
+  SJKT
+  SMK
+  SMKA
+  SABK
+  HOMESCHOOL
+  PRIVATE
+}
+
+enum Language {
+  BM
+  EN
+  ZH
+  TA
+  OTHER
+}
+
+enum DlpMode {
+  NONE
+  BILINGUAL
+  DLP_SUBJECT_VARIANT
+}
+
+enum AssessmentMode {
+  MONOLINGUAL
+  BILINGUAL
+}
+
+enum CurriculumStatus {
+  DRAFT
+  ACTIVE
+  UPCOMING
+  RETIRED
+}
+
+enum PublishStatus {
+  DRAFT
+  IN_REVIEW
+  PUBLISHED
+  UNPUBLISHED
+}
+
+enum MasteryBand {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TutorAuthorType {
+  STUDENT
+  ASSISTANT
+  SYSTEM
+}
+
+enum ModerationResult {
+  PASS
+  FLAG
+  BLOCK
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum ConsentType {
+  PRIVACY_NOTICE
+  PARENTAL_AI_USE
+  DLP_PARTICIPATION
+  MARKETING
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id            String         @id @default(uuid()) @db.Uuid
+  name          String
+  tenantType    TenantType     @default(INSTITUTION)
+  status        String         @default("active")
+  createdAt     DateTime       @default(now())
+  households    Household[]
+  users         User[]
+  subscriptions Subscription[]
+}
+
+model Household {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String?        @db.Uuid
+  organization   Organization?  @relation(fields: [organizationId], references: [id])
+  displayName    String
+  locale         String         @default("en-MY")
+  timezone       String         @default("Asia/Kuala_Lumpur")
+  createdAt      DateTime       @default(now())
+  users          User[]
+  students       Student[]
+  subscriptions  Subscription[]
+}
+
+model User {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String?       @db.Uuid
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  householdId    String?       @db.Uuid
+  household       Household?    @relation(fields: [householdId], references: [id])
+  email          String?       @unique
+  phone          String?       @unique
+  passwordHash   String
+  role           Role          @default(PARENT)
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+
+  studentProfile Student?          @relation("UserStudentProfile")
+  guardianLinks  StudentGuardian[]
+  consents       Consent[]
+  auditLogs      AuditLog[]
+  sessions       AuthSession[]
+
+  @@index([householdId])
+  @@index([role])
+}
+
+model AuthSession {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @db.Uuid
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String
+  userAgent        String?
+  ip               String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Student {
+  id           String   @id @default(uuid()) @db.Uuid
+  householdId  String   @db.Uuid
+  household    Household @relation(fields: [householdId], references: [id])
+  userId       String?  @unique @db.Uuid
+  user         User?    @relation("UserStudentProfile", fields: [userId], references: [id])
+  fullName     String
+  dob          DateTime @db.Date
+  level        Level
+  languagePref Language @default(BM)
+  dlpMode      DlpMode  @default(NONE)
+  schoolType   SchoolType @default(HOMESCHOOL)
+  createdAt    DateTime @default(now())
+
+  guardians       StudentGuardian[]
+  enrollments     Enrollment[]
+  attempts        Attempt[]
+  progressRecords ProgressRecord[]
+  tutorSessions   TutorSession[]
+
+  @@index([householdId])
+}
+
+model StudentGuardian {
+  id           String  @id @default(uuid()) @db.Uuid
+  userId       String  @db.Uuid
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentId    String  @db.Uuid
+  student      Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  relationship String  @default("parent")
+  isPrimary    Boolean @default(false)
+
+  @@unique([userId, studentId])
+  @@index([studentId])
+}
+
+model Consent {
+  id          String      @id @default(uuid()) @db.Uuid
+  userId      String      @db.Uuid
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  consentType ConsentType
+  version     String
+  accepted    Boolean     @default(true)
+  acceptedAt  DateTime    @default(now())
+
+  @@index([userId, consentType])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String?  @db.Uuid
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Curriculum
+// ---------------------------------------------------------------------------
+
+model SchoolProfile {
+  id          String     @id @default(uuid()) @db.Uuid
+  level       Level
+  schoolType  SchoolType
+  medium      Language
+  dlpMode     DlpMode    @default(NONE)
+  description String?
+  enrollments Enrollment[]
+
+  @@unique([level, schoolType, medium, dlpMode])
+}
+
+model CurriculumVersion {
+  id            String           @id @default(uuid()) @db.Uuid
+  code          String           @unique
+  label         String
+  status        CurriculumStatus @default(DRAFT)
+  effectiveFrom DateTime?        @db.Date
+  effectiveTo   DateTime?        @db.Date
+  variants      SubjectVariant[]
+
+  @@index([status])
+}
+
+model Subject {
+  id       String           @id @default(uuid()) @db.Uuid
+  code     String           @unique
+  name     String
+  domain   String
+  variants SubjectVariant[]
+}
+
+model SubjectVariant {
+  id                  String            @id @default(uuid()) @db.Uuid
+  subjectId           String            @db.Uuid
+  subject             Subject           @relation(fields: [subjectId], references: [id])
+  curriculumVersionId String            @db.Uuid
+  curriculumVersion   CurriculumVersion @relation(fields: [curriculumVersionId], references: [id])
+  level               Level
+  schoolType          SchoolType
+  language            Language
+  dlpMode             DlpMode           @default(NONE)
+  assessmentMode      AssessmentMode    @default(MONOLINGUAL)
+
+  learningStandards LearningStandard[]
+  enrollments       Enrollment[]
+  embeddingChunks   EmbeddingChunk[]
+
+  @@unique([subjectId, curriculumVersionId, level, schoolType, language, dlpMode])
+  @@index([curriculumVersionId, level, schoolType, language, dlpMode])
+}
+
+model LearningStandard {
+  id                    String         @id @default(uuid()) @db.Uuid
+  subjectVariantId      String         @db.Uuid
+  subjectVariant        SubjectVariant @relation(fields: [subjectVariantId], references: [id])
+  strand                String
+  contentStandardCode   String
+  learningStandardCode  String
+  performanceStandardCode String?
+  title                 String
+
+  lessons         Lesson[]
+  progressRecords ProgressRecord[]
+
+  @@index([subjectVariantId, strand])
+}
+
+model Lesson {
+  id                 String           @id @default(uuid()) @db.Uuid
+  learningStandardId String           @db.Uuid
+  learningStandard   LearningStandard @relation(fields: [learningStandardId], references: [id])
+  slug               String           @unique
+  title              String
+  status             PublishStatus    @default(DRAFT)
+  estimatedMinutes   Int              @default(15)
+  createdAt          DateTime         @default(now())
+
+  blocks        LessonBlock[]
+  activities    Activity[]
+  tutorSessions TutorSession[]
+  embeddingChunks EmbeddingChunk[]
+
+  @@index([learningStandardId, status])
+}
+
+model LessonBlock {
+  id        String  @id @default(uuid()) @db.Uuid
+  lessonId  String  @db.Uuid
+  lesson    Lesson  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  blockType String // text | video | audio | image | interactive | worksheet
+  sortOrder Int
+  payload   Json
+  mediaAssets MediaAsset[] @relation("LessonBlockMedia")
+
+  @@index([lessonId, sortOrder])
+}
+
+model MediaAsset {
+  id              String        @id @default(uuid()) @db.Uuid
+  storageKey      String
+  mediaType       String
+  locale          String        @default("en-MY")
+  copyrightStatus String        @default("original")
+  blocks          LessonBlock[] @relation("LessonBlockMedia")
+}
+
+model Activity {
+  id           String   @id @default(uuid()) @db.Uuid
+  lessonId     String   @db.Uuid
+  lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  activityType String // quiz | practice | short_response | interactive
+  difficulty   Int      @default(1)
+  config       Json
+  attempts     Attempt[]
+
+  @@index([lessonId])
+}
+
+// ---------------------------------------------------------------------------
+// Learning / enrollment / progress
+// ---------------------------------------------------------------------------
+
+model Enrollment {
+  id               String         @id @default(uuid()) @db.Uuid
+  studentId        String         @db.Uuid
+  student          Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  schoolProfileId  String         @db.Uuid
+  schoolProfile    SchoolProfile  @relation(fields: [schoolProfileId], references: [id])
+  subjectVariantId String         @db.Uuid
+  subjectVariant   SubjectVariant @relation(fields: [subjectVariantId], references: [id])
+  status           String         @default("active")
+  startAt          DateTime       @default(now())
+  studyPlans       StudyPlan[]
+
+  @@unique([studentId, subjectVariantId])
+  @@index([studentId, status])
+}
+
+model StudyPlan {
+  id                  String     @id @default(uuid()) @db.Uuid
+  enrollmentId        String     @db.Uuid
+  enrollment          Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  pacingMode          String     @default("self_paced")
+  weeklyTargetMinutes Int        @default(120)
+  schedule            Json?
+
+  @@index([enrollmentId])
+}
+
+model Attempt {
+  id          String      @id @default(uuid()) @db.Uuid
+  activityId  String      @db.Uuid
+  activity    Activity    @relation(fields: [activityId], references: [id])
+  studentId   String      @db.Uuid
+  student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  score       Decimal?    @db.Decimal(5, 2)
+  masteryBand MasteryBand @default(NONE)
+  responses   Json?
+  submittedAt DateTime?
+  createdAt   DateTime    @default(now())
+
+  @@index([studentId, activityId])
+}
+
+model ProgressRecord {
+  id                   String           @id @default(uuid()) @db.Uuid
+  studentId            String           @db.Uuid
+  student              Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  learningStandardId   String           @db.Uuid
+  learningStandard     LearningStandard @relation(fields: [learningStandardId], references: [id])
+  currentTahapPenguasaan String?        // PBD Tahap Penguasaan 1..6
+  masteryScore         Decimal          @default(0) @db.Decimal(5, 2)
+  evidenceSummary      Json?
+  updatedAt            DateTime         @updatedAt
+
+  @@unique([studentId, learningStandardId])
+  @@index([studentId])
+}
+
+// ---------------------------------------------------------------------------
+// AI tutor
+// ---------------------------------------------------------------------------
+
+model TutorSession {
+  id        String          @id @default(uuid()) @db.Uuid
+  studentId String          @db.Uuid
+  student   Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lessonId  String?         @db.Uuid
+  lesson    Lesson?         @relation(fields: [lessonId], references: [id])
+  provider  String          @default("anthropic")
+  mode      String          @default("explain")
+  startedAt DateTime        @default(now())
+  messages  TutorMessage[]
+
+  @@index([studentId, startedAt])
+}
+
+model TutorMessage {
+  id                String            @id @default(uuid()) @db.Uuid
+  tutorSessionId    String            @db.Uuid
+  tutorSession      TutorSession      @relation(fields: [tutorSessionId], references: [id], onDelete: Cascade)
+  authorType        TutorAuthorType
+  content           String
+  retrievalMetadata Json?
+  masterySignal     MasteryBand       @default(NONE)
+  needsReview       Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+
+  moderationEvents ModerationEvent[]
+  citations        Citation[]
+
+  @@index([tutorSessionId, createdAt])
+}
+
+model ModerationEvent {
+  id             String           @id @default(uuid()) @db.Uuid
+  tutorMessageId String           @db.Uuid
+  tutorMessage   TutorMessage     @relation(fields: [tutorMessageId], references: [id], onDelete: Cascade)
+  stage          String           @default("pre") // pre | post
+  policyResult   ModerationResult @default(PASS)
+  scores         Json?
+  createdAt      DateTime         @default(now())
+
+  @@index([tutorMessageId])
+  @@index([policyResult])
+}
+
+model Citation {
+  id             String       @id @default(uuid()) @db.Uuid
+  tutorMessageId String       @db.Uuid
+  tutorMessage   TutorMessage @relation(fields: [tutorMessageId], references: [id], onDelete: Cascade)
+  sourceType     String // lesson | learning_standard | embedding_chunk
+  sourceId       String       @db.Uuid
+  locator        String?
+
+  @@index([tutorMessageId])
+}
+
+// Retrieval store. The `embedding` column is added as a pgvector type via a
+// manual migration (Prisma has no native vector scalar yet) — see
+// prisma/migrations and docs/ai-tutor.md.
+model EmbeddingChunk {
+  id               String          @id @default(uuid()) @db.Uuid
+  lessonId         String?         @db.Uuid
+  lesson           Lesson?         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  subjectVariantId String?         @db.Uuid
+  subjectVariant   SubjectVariant? @relation(fields: [subjectVariantId], references: [id])
+  // retrieval filter dimensions (denormalized for fast filtered ANN search)
+  curriculumVersionCode String?
+  schoolType            SchoolType?
+  language              Language?
+  dlpMode               DlpMode?
+  content          String
+  tokenCount       Int             @default(0)
+  // embedding vector(1536) — managed via raw SQL migration
+  createdAt        DateTime        @default(now())
+
+  @@index([curriculumVersionCode, schoolType, language, dlpMode])
+}
+
+// ---------------------------------------------------------------------------
+// Commerce
+// ---------------------------------------------------------------------------
+
+model Subscription {
+  id               String             @id @default(uuid()) @db.Uuid
+  householdId      String?            @db.Uuid
+  household        Household?         @relation(fields: [householdId], references: [id])
+  organizationId   String?            @db.Uuid
+  organization     Organization?      @relation(fields: [organizationId], references: [id])
+  provider         String             @default("billplz")
+  planCode         String
+  status           SubscriptionStatus @default(TRIALING)
+  currentPeriodEnd DateTime?
+  createdAt        DateTime           @default(now())
+
+  payments Payment[]
+  invoices Invoice[]
+
+  @@index([householdId])
+  @@index([status])
+}
+
+model Payment {
+  id                String       @id @default(uuid()) @db.Uuid
+  subscriptionId    String       @db.Uuid
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  providerPaymentId String?
+  amount            Decimal      @db.Decimal(10, 2)
+  currency          String       @default("MYR")
+  status            String       @default("pending")
+  paidAt            DateTime?
+  createdAt         DateTime     @default(now())
+
+  @@index([subscriptionId])
+}
+
+model Invoice {
+  id             String       @id @default(uuid()) @db.Uuid
+  subscriptionId String       @db.Uuid
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  invoiceNo      String       @unique
+  subtotal       Decimal      @db.Decimal(10, 2)
+  tax            Decimal      @default(0) @db.Decimal(10, 2)
+  total          Decimal      @db.Decimal(10, 2)
+  status         String       @default("issued")
+  createdAt      DateTime     @default(now())
+
+  @@index([subscriptionId])
+}
+
+model WebhookEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  provider    String
+  eventType   String
+  externalId  String?
+  payload     Json
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@unique([provider, externalId])
+}

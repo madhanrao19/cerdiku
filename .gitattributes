@@ -1,0 +1,11 @@
+# Normalize line endings to LF in the repo on all platforms; check out native.
+* text=auto eol=lf
+
+# Binary / generated files Git should not touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+pnpm-lock.yaml -diff linguist-generated=true

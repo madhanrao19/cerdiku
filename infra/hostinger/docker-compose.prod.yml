@@ -1,0 +1,69 @@
+name: kpm-prod
+
+# Full stack on a single Hostinger KVM VPS. TLS terminated by Caddy.
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web, api]
+
+  web:
+    image: ${REGISTRY}/kpm-web:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - API_BASE_URL=http://api:4000
+      - NEXT_PUBLIC_APP_URL=https://${DOMAIN}
+    depends_on: [api]
+
+  api:
+    image: ${REGISTRY}/kpm-api:${TAG:-latest}
+    restart: unless-stopped
+    env_file: [.env.prod]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  worker:
+    image: ${REGISTRY}/kpm-worker:${TAG:-latest}
+    restart: unless-stopped
+    env_file: [.env.prod]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    env_file: [.env.prod]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:
