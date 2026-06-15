@@ -1,7 +1,7 @@
-# KPM Learning Platform
+# Cerdiku
 
-A Malaysia **KPM-aligned digital learning platform** for preschool, primary, and
-secondary home learners. Positioned as a subscription learning platform for
+**Cerdiku** is a Malaysia **KPM-aligned** digital learning platform for preschool,
+primary, and secondary home learners. Positioned as a subscription learning platform for
 parents and students — **not** a registered school — with a versioned curriculum
 engine, school-type/language/DLP variants, an RAG-grounded child-safe AI tutor,
 PBD-style progress tracking, payments, and admin operations.

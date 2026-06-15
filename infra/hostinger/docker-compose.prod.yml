@@ -1,4 +1,4 @@
-name: kpm-prod
+name: cerdiku-prod
 
 # Full stack on a single Hostinger KVM VPS. TLS terminated by Caddy.
 services:

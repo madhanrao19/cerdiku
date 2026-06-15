@@ -26,7 +26,7 @@ export function initTracing(serviceName: string): void {
   sdk = new NodeSDK({
     resource: new Resource({
       'service.name': serviceName,
-      'service.namespace': 'kpm-platform',
+      'service.namespace': 'cerdiku',
       'deployment.environment': process.env.NODE_ENV ?? 'development',
     }),
     traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),

@@ -1,4 +1,4 @@
-name: kpm-platform
+name: cerdiku
 
 services:
   postgres:

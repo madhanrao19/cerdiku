@@ -38,7 +38,7 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
-  MAIL_FROM: z.string().default('no-reply@kpm-platform.local'),
+  MAIL_FROM: z.string().default('no-reply@cerdiku.local'),
   SMTP_URL: z.string().optional(),
 
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),

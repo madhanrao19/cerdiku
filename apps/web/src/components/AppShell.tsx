@@ -33,7 +33,7 @@ export function AppShell({
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Link href="/" className="font-bold text-brand">
-            KPM Learning
+            Cerdiku
           </Link>
           <nav aria-label="Primary" className="flex gap-1">
             {nav[role].map((item) => (
